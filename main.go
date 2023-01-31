@@ -112,13 +112,13 @@ func GetAllWithCustom(ctx context.Context, driverName, dataSourceName string) []
 }
 
 type SqlxSample struct {
-	ID          int            `db:"id"`
-	Name        string         `db:"name"`
-	Description sql.NullString `db:"description"`
-	IntExample  sql.NullInt64  `db:"int_example"`
-	CreatedAt   time.Time      `db:"created_at"`
-	UpdatedAt   time.Time      `db:"updated_at"`
-	DeletedAt   sql.NullTime   `db:"deleted_at"`
+	ID          int        `db:"id"`
+	Name        string     `db:"name"`
+	Description *string    `db:"description"`
+	IntExample  *int       `db:"int_example"`
+	CreatedAt   time.Time  `db:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at"`
+	DeletedAt   *time.Time `db:"deleted_at"`
 }
 
 func GetAllWithSqlx(ctx context.Context, driverName, dataSourceName string) []SqlxSample {
@@ -135,6 +135,7 @@ func GetAllWithSqlx(ctx context.Context, driverName, dataSourceName string) []Sq
 	return samples
 }
 
+// SampleTable must be named after the table for gorm to find it
 type SampleTable struct {
 	gorm.Model
 	ID          int
