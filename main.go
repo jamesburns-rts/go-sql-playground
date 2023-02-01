@@ -77,11 +77,11 @@ func migrateWithGoose(driverName, dataSourceName string) {
 type CustomSample struct {
 	ID          int
 	Name        string
-	Description sql.NullString
-	IntExample  sql.NullInt64
+	Description *string
+	IntExample  *int
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-	DeletedAt   sql.NullTime
+	DeletedAt   *time.Time
 }
 
 func GetAllWithCustom(ctx context.Context, driverName, dataSourceName string) []CustomSample {
