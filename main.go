@@ -12,14 +12,13 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 	"io"
+	"io/fs"
 	"log"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
 )
-
-//go:embed migrations/*.sql
-var embedMigrations embed.FS
 
 // CustomSample to be used with built-in go sql stuff
 type CustomSample struct {
@@ -106,10 +105,11 @@ func main() {
 
 	// sqlx insert
 	_, _ = sqlxDBConnection.NamedExecContext(ctx,
-		"insert into test.sample_table (name, description) values (:name, :description)",
+		"insert into test.sample_table (name, description, int_example) values (:name, :description, :int_example)",
 		SqlxSample{
 			Name:        "Sqlx Inserted Sample",
 			Description: ptr("Sqlx inserted description"),
+			IntExample:  ptr(1),
 		},
 	)
 
@@ -142,6 +142,44 @@ func main() {
 	gormSamples := make([]SampleTable, 0)
 	_ = gormDBConnection.Find(&gormSamples)
 	printSamples("gorm", gormSamples)
+
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// test inserts with returned
+	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	// custom insert
+	cs = CustomSample{
+		Name:        "Custom Inserted Sample",
+		Description: ptr("Custom inserted description"),
+	}
+	row := customDBConnection.QueryRowContext(ctx,
+		"insert into test.sample_table (name, description, int_example) values ($1, $2, $3) returning id, created_at, updated_at",
+		cs.Name, cs.Description, cs.IntExample,
+	)
+	_ = row.Scan(&cs.ID, &cs.CreatedAt, &cs.UpdatedAt)
+	printSamples("inserted custom", cs)
+
+	// sqlx insert
+	ss := SqlxSample{
+		Name:        "Sqlx Inserted Sample",
+		Description: ptr("Sqlx inserted description"),
+		IntExample:  ptr(1),
+	}
+
+	query, args, _ := sqlxDBConnection.BindNamed(
+		"insert into test.sample_table (name, description, int_example) values (:name, :description, :int_example) returning *",
+		ss,
+	)
+	_ = sqlxDBConnection.GetContext(ctx, &ss, query, args...)
+	printSamples("sqlx inserted", ss)
+
+	// gorm insert
+	st := SampleTable{
+		Name:        "Gorm Inserted Sample",
+		Description: ptr("Gorm inserted description"),
+	}
+	_ = gormDBConnection.Create(&st)
+	printSamples("gorm inserted", st)
 }
 
 func printSamples(source string, samples any) {
@@ -169,7 +207,13 @@ func migrateWithGoose(db *sql.DB) {
 
 	// do migrations
 	_ = goose.SetDialect("postgres")
-	goose.SetBaseFS(embedMigrations)
+	goose.SetBaseFS(FilteredFS{
+		FS: embedMigrations,
+		ShouldSkip: func(f fs.DirEntry) bool {
+			return f.Name() == "2_init.sql"
+		},
+	})
+
 	if err := goose.Up(db, "migrations", goose.WithAllowMissing()); err != nil {
 		panic(err)
 	}
@@ -183,4 +227,35 @@ func ptr[T any](t T) *T {
 // safeClose is a helper method that can be used to handle closing errors - or just suppress them
 func safeClose(closer io.Closer) {
 	_ = closer.Close()
+}
+
+//go:embed migrations/*.sql
+var embedMigrations embed.FS
+
+type FilteredFS struct {
+	embed.FS
+	ShouldSkip func(f fs.DirEntry) bool
+}
+
+func (f FilteredFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	unfiltered, err := f.FS.ReadDir(name)
+	if err != nil {
+		return unfiltered, err
+	}
+	filtered := make([]fs.DirEntry, 0, len(unfiltered))
+	for _, entry := range unfiltered {
+		if !f.ShouldSkip(entry) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered, err
+}
+
+func init() {
+	goose.SetBaseFS(FilteredFS{
+		FS: embedMigrations,
+		ShouldSkip: func(f fs.DirEntry) bool {
+			return strings.Contains(f.Name(), "test_data")
+		},
+	})
 }
