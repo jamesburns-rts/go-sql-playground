@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"github.com/pressly/goose/v3"
+	"go-orm-test/sqlcdb"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -17,7 +18,8 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	//_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
 )
 
 // CustomSample to be used with built-in go sql stuff
@@ -57,7 +59,7 @@ type SampleTable struct {
 // before running, run `docker-compose -f postgres.yml up`
 // note, error handling is not done here for ease of comparison
 func main() {
-	driverName := "postgres"
+	driverName := "pgx"
 	connectionString := "user=localuser password=supersecret dbname=testdb sslmode=disable host=localhost"
 	ctx := context.Background() // you don't need to use contexts, but it's good practice
 
@@ -65,24 +67,41 @@ func main() {
 	// make connections
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// custom connection
-	customDBConnection, _ := sql.Open(driverName, connectionString)
+	customDBConnection, err := sql.Open(driverName, connectionString)
+	if err != nil {
+		panic(err)
+	}
 	defer safeClose(customDBConnection)
 
 	// sqlx connection
-	sqlxDBConnection, _ := sqlx.ConnectContext(ctx, driverName, connectionString)
+	sqlxDBConnection, err := sqlx.ConnectContext(ctx, driverName, connectionString)
+	if err != nil {
+		panic(err)
+	}
 	defer safeClose(sqlxDBConnection)
 
 	// gorm connection
-	gormDBConnection, _ := gorm.Open(postgres.Open(connectionString), &gorm.Config{
+	gormDBConnection, err := gorm.Open(postgres.Open(connectionString), &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{
 			TablePrefix:   "test.",
 			SingularTable: true,
 		},
 	})
+	if err != nil {
+		panic(err)
+	}
 	defer func() {
 		db, _ := gormDBConnection.DB()
 		_ = db.Close()
 	}()
+
+	// sqlc connection
+	sqlcDBConnection, err := pgx.Connect(ctx, connectionString)
+	if err != nil {
+		panic(err)
+	}
+	defer safeCloseCtx(sqlcDBConnection)
+	sqlcQueries := sqlcdb.New(sqlcDBConnection)
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// do migrations with goose
@@ -119,6 +138,13 @@ func main() {
 		Description: ptr("Gorm inserted description"),
 	})
 
+	// sqlc insert
+	_ = sqlcQueries.CreateSampleNoReturn(ctx, sqlcdb.CreateSampleNoReturnParams{
+		Name:        "SQLC Inserted Sample",
+		Description: ptr("SQLC inserted description"),
+		IntExample:  ptr(int32(2)),
+	})
+
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// test selects
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -142,6 +168,10 @@ func main() {
 	gormSamples := make([]SampleTable, 0)
 	_ = gormDBConnection.Find(&gormSamples)
 	printSamples("gorm", gormSamples)
+
+	// sqlc select
+	sqlcSamples, _ := sqlcQueries.GetAllSamples(ctx)
+	printSamples("sqlc", sqlcSamples)
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// test inserts with returned
@@ -180,6 +210,14 @@ func main() {
 	}
 	_ = gormDBConnection.Create(&st)
 	printSamples("gorm inserted", st)
+
+	// sqlc insert
+	sc, _ := sqlcQueries.CreateSampleWithReturn(ctx, sqlcdb.CreateSampleWithReturnParams{
+		Name:        "SQLC Inserted with return Sample",
+		Description: ptr("SQLC inserted description"),
+		IntExample:  ptr(int32(3)),
+	})
+	printSamples("sqlc inserted", sc)
 }
 
 func printSamples(source string, samples any) {
@@ -227,6 +265,12 @@ func ptr[T any](t T) *T {
 // safeClose is a helper method that can be used to handle closing errors - or just suppress them
 func safeClose(closer io.Closer) {
 	_ = closer.Close()
+}
+
+func safeCloseCtx(closer interface {
+	Close(ctx2 context.Context) error
+}) {
+	_ = closer.Close(context.Background())
 }
 
 //go:embed migrations/*.sql
