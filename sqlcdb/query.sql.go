@@ -82,3 +82,75 @@ func (q *Queries) GetAllSamples(ctx context.Context) ([]TestSampleTable, error) 
 	}
 	return items, nil
 }
+
+const getDescriptions = `-- name: GetDescriptions :many
+select description from test.sample_table
+`
+
+func (q *Queries) GetDescriptions(ctx context.Context) ([]*string, error) {
+	rows, err := q.db.Query(ctx, getDescriptions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []*string{}
+	for rows.Next() {
+		var description *string
+		if err := rows.Scan(&description); err != nil {
+			return nil, err
+		}
+		items = append(items, description)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getIdDescriptions = `-- name: GetIdDescriptions :many
+select id, description from test.sample_table
+`
+
+type GetIdDescriptionsRow struct {
+	ID          int32   `json:"id"`
+	Description *string `json:"description"`
+}
+
+func (q *Queries) GetIdDescriptions(ctx context.Context) ([]GetIdDescriptionsRow, error) {
+	rows, err := q.db.Query(ctx, getIdDescriptions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetIdDescriptionsRow{}
+	for rows.Next() {
+		var i GetIdDescriptionsRow
+		if err := rows.Scan(&i.ID, &i.Description); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getSampleByID = `-- name: GetSampleByID :one
+select id, name, description, int_example, created_at, updated_at, deleted_at from test.sample_table where id = $1
+`
+
+func (q *Queries) GetSampleByID(ctx context.Context, id int32) (TestSampleTable, error) {
+	row := q.db.QueryRow(ctx, getSampleByID, id)
+	var i TestSampleTable
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IntExample,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}

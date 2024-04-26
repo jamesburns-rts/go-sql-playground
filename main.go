@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"github.com/jmoiron/sqlx"
 	"github.com/pressly/goose/v3"
+	"github.com/volatiletech/null/v8"
+	"github.com/volatiletech/sqlboiler/v4/boil"
+	"go-orm-test/sqlbdb"
 	"go-orm-test/sqlcdb"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -21,6 +24,10 @@ import (
 	//_ "github.com/lib/pq"
 	"github.com/jackc/pgx/v5"
 )
+
+// TODO https://github.com/stytchauth/sqx
+// TODO https://github.com/Masterminds/squirrel
+// TODO https://github.com/jackc/pgx
 
 // CustomSample to be used with built-in go sql stuff
 type CustomSample struct {
@@ -60,13 +67,13 @@ type SampleTable struct {
 // note, error handling is not done here for ease of comparison
 func main() {
 	driverName := "pgx"
-	connectionString := "user=localuser password=supersecret dbname=testdb sslmode=disable host=localhost"
+	connectionString := "user=localuser password=supersecret dbname=testdb sslmode=disable host=localhost port=5433"
 	ctx := context.Background() // you don't need to use contexts, but it's good practice
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// make connections
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-	// custom connection
+	// custom/sqlboiler connection
 	customDBConnection, err := sql.Open(driverName, connectionString)
 	if err != nil {
 		panic(err)
@@ -145,6 +152,14 @@ func main() {
 		IntExample:  ptr(int32(2)),
 	})
 
+	// sqlboilere insert
+	sqlbdbSample := sqlbdb.SampleTable{
+		Name:        "SQLBoiler Inserted Sample",
+		Description: null.StringFrom("SQLBoiler inserted description"),
+		IntExample:  null.IntFrom(3),
+	}
+	_ = sqlbdbSample.Insert(ctx, customDBConnection, boil.Infer())
+
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// test selects
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -172,6 +187,10 @@ func main() {
 	// sqlc select
 	sqlcSamples, _ := sqlcQueries.GetAllSamples(ctx)
 	printSamples("sqlc", sqlcSamples)
+
+	// sqlboilere insert
+	sqlbSamples, _ := sqlbdb.SampleTables().All(ctx, customDBConnection)
+	printSamples("sqlboiler", sqlbSamples)
 
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// test inserts with returned
@@ -218,6 +237,15 @@ func main() {
 		IntExample:  ptr(int32(3)),
 	})
 	printSamples("sqlc inserted", sc)
+
+	// sqlboiler (handles it automatically)
+	sqlbdbSample2 := sqlbdb.SampleTable{
+		Name:        "SQLBoiler Inserted Sample",
+		Description: null.StringFrom("SQLBoiler inserted description"),
+		IntExample:  null.IntFrom(3),
+	}
+	_ = sqlbdbSample2.Insert(ctx, customDBConnection, boil.Infer())
+	printSamples("sqlboiler inserted", sqlbdbSample2)
 }
 
 func printSamples(source string, samples any) {

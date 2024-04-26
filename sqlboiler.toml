@@ -1,0 +1,8 @@
+[psql]
+  dbname = "testdb"
+  host   = "localhost"
+  port   = 5433
+  user   = "localuser"
+  pass   = "supersecret"
+  schema = "test"
+  sslmode = "disable"
